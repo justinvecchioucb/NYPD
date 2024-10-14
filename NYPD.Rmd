@@ -1,0 +1,111 @@
+---
+title: "NYPD Shooting Analysis"
+output:
+  pdf_document: default
+  html_document: default
+date: "2024-10-10"
+---
+
+# Analysis of New York City Shootings (January 2006 - December 2023)
+
+## Introduction
+
+The purpose of this analysis is to examine New York City shooting data from January of 2006 until December 2023 to identify trends and patterns.
+
+## Load the libraries
+
+```{r library}
+library(tidyverse)
+library(lubridate)
+library(caret)
+```
+
+# Reading in the dataset from the City of New York website
+
+```{r import}
+url <- "https://data.cityofnewyork.us/api/views/833y-fsy8/rows.csv?accessType=DOWNLOAD"
+data <- read.csv(url)
+```
+
+## Cleaning up the data
+
+```{r cleanup}
+#Check for any missing values, I am cleaning out location data. If any NA are in the data set, it will clean them out. Also converts the occured date to a date format.
+shooting_data_clean <- data %>%
+  select(-X_COORD_CD, -Y_COORD_CD, -Latitude, -Longitude)
+anyNA(shooting_data_clean)
+shooting_data_clean <- shooting_data_clean %>%
+  drop_na()
+shooting_data_clean$OCCUR_DATE <- as.Date(shooting_data_clean$OCCUR_DATE, format = "%m/%d/%Y")
+#Create factors so they dont get confused for dates
+shooting_data_clean$VIC_AGE_GROUP <- as.factor(shooting_data_clean$VIC_AGE_GROUP)
+shooting_data_clean$PERP_AGE_GROUP <- as.factor(shooting_data_clean$PERP_AGE_GROUP)
+shooting_data_clean <- shooting_data_clean %>%
+  filter(VIC_AGE_GROUP != "1022", 
+         PERP_AGE_GROUP != "224", 
+         PERP_AGE_GROUP != "940", 
+         PERP_AGE_GROUP != "1020", 
+         PERP_AGE_GROUP != "1028",
+         PERP_AGE_GROUP != "")
+#Ensures values are T/F
+shooting_data_clean$STATISTICAL_MURDER_FLAG <- as.logical(shooting_data_clean$STATISTICAL_MURDER_FLAG)
+```
+
+## Summarize clean data
+
+```{r summarize}
+#Summarizes the cleaned up data to have a better conceptualization of the data at hand and help me draw an analysis. 
+summary(shooting_data_clean)
+
+```
+
+# Shootings Over Time Visual
+
+```{r visualone}
+ggplot(shooting_data_clean, aes(x = OCCUR_DATE)) +
+  geom_histogram(binwidth = 30) +
+  labs(title = "Number of Shootings Over Time", x = "Date", y = "Number of Shootings")
+```
+
+**Analysis:** The histogram above showing the "Number of Shootings Over Time" reveals some key patterns in shooting incidents between January 2006 and December 2023. The general trend suggests an increase in shootings in certain years, especially around 2010 and again between 2015 and 2020. Peaks and troughs in the data could be linked to socio-political events, the COVID-19 pandemic, or broader issues that influenced crime rates during those periods. We could take a deeper drive into additional analysis and examine whether specific months or years had higher spikes in shooting incidents, and correlate those to events in NYC.
+
+# Victim Age Group vs. Perpetrator Age Group Visual
+
+```{r visualtwo}
+ggplot(shooting_data_clean, aes(x = VIC_AGE_GROUP, fill = PERP_AGE_GROUP)) +
+  geom_bar(position = "dodge") +
+  labs(title = "Victim Age Group vs Perpetrator Age Group", x = "Victim Age Group", y = "Count") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+age_group_analysis <- shooting_data_clean %>%
+  group_by(VIC_AGE_GROUP, PERP_AGE_GROUP) %>%
+  summarise(Count = n())
+
+print(age_group_analysis)
+```
+
+**Analysis:** The bar chart comparing victim age groups and perpetrator age groups highlights some patterns in the demographics involved in shootings. The largest number of victims and perpetrators fall within the 18-24 and 25-44 age groups, suggesting that young adults are disproportionately involved in gun violence incidents, both as perpetrators and as victims. Additionally, the "\<18" category shows a significant number of both victims and perpetrators, which raises concerns about youth involvement in violent crime, concerning as these young adults become adults. A small number of incidents also involve older adults, but this is much less common. Interestingly, the "UNKNOWN" category appears for both victims and perpetrators, which suggests missing or unrecorded data that could affect the accuracy of the findings. I am curious as to why those are unknown and how NYC can enforce or create procedures for reporting this data that is more clear.
+
+## Linear Regressing Modeling
+
+This model attempts to predict the likelihood of a shooting resulting in a murder (indicated by STATISTICAL_MURDER_FLAG) using predictors such as VIC_AGE_GROUP, PERP_AGE_GROUP, BORO, and OCCUR_DATE.
+
+```{r model}
+murder_lm <- lm(as.numeric(STATISTICAL_MURDER_FLAG) ~ VIC_AGE_GROUP + PERP_AGE_GROUP + BORO + OCCUR_DATE, data = shooting_data_clean)
+summary(murder_lm)
+predicted_values <- predict(murder_lm)
+predicted_class <- ifelse(predicted_values > 0.3, TRUE, FALSE)
+confusionMatrix(as.factor(predicted_class), as.factor(shooting_data_clean$STATISTICAL_MURDER_FLAG))
+```
+
+**Analysis**: The data displays that age groups 18-24, 25-44, and 45-64 show positive coefficients, meaning shootings involving victims from these age groups are more likely to result in a murder than shootings involving younger or older age groups. The low R-squared value (0.047) suggests that the model explains only a small proportion of the variance in whether a shooting results in a murder. This implies that additional variables or interaction terms not included in this analysis may play a significant role in predicting murders.
+
+**Conclusion**: My analysis of New York City shooting data from January 2006 to December 2023 aimed to uncover trends and patterns in shooting incidents and identify key factors influencing whether a shooting resulted in a murder. The data cleaning process involved filtering out missing or inconsistent values, converting date fields, and ensuring categorical variables like victim and perpetrator age groups were treated correctly.
+
+I observed that the number of shootings fluctuated over time, with notable peaks around 2010, 2015, and during the COVID-19 pandemic. These fluctuations may be linked to broader socio-political events or changes in law enforcement policies. A further breakdown of victim and perpetrator demographics revealed that young adults, particularly those in the 18-24 and 25-44 age groups, were disproportionately involved in gun violence as both victims and perpetrators.
+
+The linear regression model attempted to predict whether a shooting would result in a murder based on variables such as victim and perpetrator age groups, borough, and date of occurrence. While certain factors, such as perpetrator and victim age group, showed significant relationships with murder likelihood, the model had limited predictive power.
+
+The confusion matrix further highlighted the challenges of the model, particularly its difficulty in predicting murders (TRUE) accurately. Despite achieving an overall accuracy of 78.78%, the model's specificity was extremely low, means it struggled to correctly identify actual murder cases. This is likely due to class imbalance, where the dataset contains many more non-murder cases (FALSE) than murder cases (TRUE).
+
+In summary, while this analysis provides valuable insights into the demographics of shootings and the factors influencing murder likelihood, the current model's power is limited. In the future I could focus on incorporating additional variables, exploring interactions between variables, and using classification methods like logistic regression to better handle the outcomes. Addressing the class imbalance in the dataset and refining the model could also lead to more accurate conclusions.
