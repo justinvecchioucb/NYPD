@@ -1,0 +1,165 @@
+---
+title: "COVID-19"
+output:
+  pdf_document: default
+  html_document: default
+date: "2024-10-03"
+---
+
+## About the Datasets
+
+The datasets are a part of the *COVID-19 Data Repository by the Center for Systems Science and Engineering (CSSE) at Johns Hopkins University* Github repository*.* We will use a few datasets located in there to analyze COVID-19 trends, specifically, the progression of confirmed cases and deaths.
+
+## Import Packages
+
+This loads the tidyverse package.
+
+```{r setup}
+library(tidyverse)
+```
+
+## Import Data
+
+This creates a variable "url_base" and assigns the parent URL where our files are hosted. It then concatenates the file name to the end, imports and reads the data set, then gives us a visual confirmation of the data obtained.
+
+```{r import}
+url_base <- "https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/csse_covid_19_time_series/"
+
+file_names <- c("time_series_covid19_confirmed_global.csv", 
+                "time_series_covid19_deaths_global.csv", 
+                "time_series_covid19_recovered_global.csv")
+
+urls <- paste0(url_base, file_names)
+
+global_cases <- read_csv(urls[1])
+global_deaths <- read_csv(urls[2])
+global_recovered <- read_csv(urls[3])
+
+head(global_cases)
+head(global_deaths)
+head(global_recovered)
+```
+
+## Clean Up Data
+
+This stage cleans up the data sets by removing latitude and longitude columns, creates a pivot of the data to change the format of the data to be read in rows, rather than columns. The only columns that it keeps are Province/State and Country/Region. It also converts the date from ymd to mdy, provides us with a visual confirmation and continues with the other data sets to match. Displays each so we can confirm that this worked as expected and to ensure the integrity of the data before moving forward.
+
+```{r clean}
+global_cases_tidy <- global_cases %>%
+  select(-Lat, -Long) %>% 
+  pivot_longer(cols = -c(`Province/State`, `Country/Region`), 
+               names_to = "Date", values_to = "Cases") %>%
+  mutate(Date = mdy(Date)) 
+
+head(global_cases_tidy)
+
+global_deaths_tidy <- global_deaths %>%
+  select(-Lat, -Long) %>% 
+  pivot_longer(cols = -c(`Province/State`, `Country/Region`),  
+               names_to = "Date", values_to = "Deaths") %>%
+  mutate(Date = mdy(Date))  
+
+head(global_deaths_tidy)
+
+global_recovered_tidy <- global_recovered %>%
+  select(-Lat, -Long) %>% 
+  pivot_longer(cols = -c(`Province/State`, `Country/Region`),  
+               names_to = "Date", values_to = "Recovered") %>%
+  mutate(Date = mdy(Date))  
+
+head(global_recovered_tidy)
+```
+
+## Merge
+
+This steps merges the global_cases_tidy, global_deaths_tidy, and global_recovered_tidy into one table so we can efficiently visualize it.
+
+```{r merge}
+global_data_tidy <- global_cases_tidy %>%
+  left_join(global_deaths_tidy, by = c("Province/State", "Country/Region", "Date")) %>%
+  left_join(global_recovered_tidy, by = c("Province/State", "Country/Region", "Date"))
+
+head(global_data_tidy)
+```
+
+## Summary of Data
+
+This step provides us with a summary of the total confirmed cases and deaths over time.
+
+```{r summary}
+global_summary <- global_data_tidy %>%
+  group_by(Date) %>%
+  summarise(Total_Confirmed = sum(Cases, na.rm = TRUE), 
+            Total_Deaths = sum(Deaths, na.rm = TRUE))
+
+head(global_summary)
+
+```
+
+## Visual One
+
+My first visualization shows the trend of total confirmed cases and deaths globally over time.
+
+```{r visualone}
+ggplot(global_summary, aes(x = Date)) +
+  geom_line(aes(y = Total_Confirmed, color = "Confirmed Cases")) +
+  geom_line(aes(y = Total_Deaths, color = "Deaths")) +
+  labs(title = "Global COVID-19 Trends Over Time",
+       y = "Total Count",
+       x = "Date",
+       color = "Metric") +
+  theme_minimal()
+
+```
+
+## Visual Two
+
+Here, I created a plot showing the confirmed cases and deaths in the country of my choosing. I created a variable named country that can easily allow me to change the country in which I want to visualize, but it must match the country name on the dataset.
+
+```{r visualtwo}
+country <- "US"
+country_data <- global_data_tidy %>%
+  filter(`Country/Region` == country)
+
+country_summary <- country_data %>%
+  group_by(Date) %>%
+  summarise(Total_Confirmed = sum(Cases, na.rm = TRUE),
+            Total_Deaths = sum(Deaths, na.rm = TRUE))
+
+ggplot(country_summary, aes(x = Date)) +
+  geom_line(aes(y = Total_Confirmed, color = "Confirmed Cases")) +
+  geom_line(aes(y = Total_Deaths, color = "Deaths")) +
+  labs(title = paste("COVID-19 Confirmed Cases and Deaths in ", country),
+       y = "Total Count",
+       x = "Date",
+       color = "Metric") +
+  theme_minimal()
+
+```
+
+## Model
+
+I used a linear regression model to predict the number of total deaths based on total confirmed cases to help understand the relationship between cases and deaths on a global level.
+
+```{r model}
+model <- lm(Total_Deaths ~ Total_Confirmed, data = global_summary)
+
+summary(model)
+
+ggplot(global_summary, aes(x = Total_Confirmed, y = Total_Deaths)) +
+  geom_point() +
+  geom_smooth(method = "lm", color = "red") +
+  labs(title = "Total Confirmed Cases vs Total Deaths",
+       x = "Total Confirmed Cases",
+       y = "Total Deaths") +
+  theme_minimal()
+
+```
+
+## My Analysis:
+
+In this case, I envision the bias coming into play in how the data is collected and reported for each country. I assume that each country has different standards for reporting and time delay to do so, but even more importantly, each country has a different capacity in medicine. For example, country A may have state of the art medical and testing equip. which would allow them to test much faster and possibly at less cost for the consumer. Country B may have limited medical professionals or infrastructure which may result in increased costs and may not accurately represent the actuality of cases and deaths in the country.
+
+I also simplified the mode because it is based solely on confirmed cases and deaths. Many factors like healthcare infrastructure, lockdown measures, and population density are not included but could significantly affect the death rate.
+
+My analysis of COVID-19 data shows the progression of confirmed cases and deaths. While the data reveals really important trends, it also draws attention to the complexities and limitations in tracking the pandemic's impact and how much work must have been put in to do so. I would love to incorporate additional variables and dive into each country to capture the full range of factors affecting outcomes.
